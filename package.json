@@ -47,12 +47,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/thelinkflow/linkflow-react-native-sdk.git"
+    "url": "git+https://github.com/thelinkflow/linkflow-react-native-sdk-v2.git"
   },
   "author": "LinkFlow <dev@thelinkflow.app> (https://thelinkflow.app)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/thelinkflow/linkflow-react-native-sdk/issues"
+    "url": "https://github.com/thelinkflow/linkflow-react-native-sdk-v2/issues"
   },
   "homepage": "https://thelinkflow.app",
   "publishConfig": {

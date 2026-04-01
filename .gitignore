@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+lib/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Lock files (use yarn.lock)
+package-lock.json
+
+# Example app build artifacts
+example/ios/build/
+example/android/build/
+example/android/.gradle/
+
+# Testing
+coverage/

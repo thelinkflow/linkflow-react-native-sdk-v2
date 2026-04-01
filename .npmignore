@@ -1,0 +1,21 @@
+# Build artifacts not needed by consumers
+example/
+.vscode/
+.github/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__/
+__fixtures__/
+__mocks__/
+
+# Dev config files
+jest.config.js
+.eslintrc*
+.prettierrc*
+babel.config.js
+
+# Local stuff
+*.log
+.DS_Store

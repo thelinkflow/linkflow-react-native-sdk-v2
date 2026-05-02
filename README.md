@@ -23,6 +23,10 @@ npm install @linkflow/react-native-sdk
 yarn add @linkflow/react-native-sdk
 ```
 
+The SDK is **zero-config**: native iOS and Android source is shipped inside
+the package and wired up via React Native autolinking. There is no separate
+CocoaPod or Maven dependency to add.
+
 ### iOS Setup
 
 ```bash
@@ -37,7 +41,8 @@ Add to `Info.plist`:
 
 ### Android Setup
 
-No additional setup required!
+No additional setup required — the module autolinks. Standard React Native
+rebuild (`./gradlew clean && yarn android`) is enough.
 
 ## Quick Start
 
@@ -49,31 +54,37 @@ import { useEffect } from 'react';
 
 function App() {
   useEffect(() => {
-    // Initialize SDK
-    LinkFlow.initialize({
-      apiBaseURL: 'https://thelinkflow.app',
-      enableLogging: __DEV__
-    });
+    let mounted = true;
 
-    // Set attribution callback
-    LinkFlow.setAttributionCallback((result) => {
-      if (result.attributed) {
-        console.log('Deep Link:', result.deepLinkValue);
-        console.log('Campaign:', result.campaignData);
+    (async () => {
+      await LinkFlow.initialize({
+        apiBaseURL: 'https://thelinkflow.app',
+        enableLogging: __DEV__
+      });
+      if (mounted) await LinkFlow.handleAppLaunch();
+    })();
 
-        // Navigate based on deep link
-        if (result.deepLinkValue?.includes('product')) {
-          navigation.navigate('Product', {
-            ...result.deepLinkParams
-          });
-        }
+    const attribSub = LinkFlow.addAttributionListener((result) => {
+      if (result.attributed && result.deepLinkValue?.includes('product')) {
+        navigation.navigate('Product', { ...result.deepLinkParams });
       }
     });
 
-    // Handle app launch
-    LinkFlow.handleAppLaunch();
+    const deepLinkSub = LinkFlow.addDeepLinkListener(({ url }) => {
+      console.log('[LinkFlow] deep link received:', url);
+    });
 
-    return () => LinkFlow.destroy();
+    const errorSub = LinkFlow.addErrorListener((err) => {
+      console.warn('[LinkFlow] error:', err.message);
+    });
+
+    return () => {
+      mounted = false;
+      attribSub.remove();
+      deepLinkSub.remove();
+      errorSub.remove();
+      LinkFlow.destroy();
+    };
   }, []);
 
   return <YourApp />;
@@ -99,19 +110,19 @@ await LinkFlow.trackEvent('product_view', {
 
 ### 3. Handle Deep Links
 
-Deep links are automatically handled and delivered via the attribution callback:
+The SDK auto-bridges `Linking` events to native and re-emits them as
+`LinkFlowDeepLink`. Subscribe with `addDeepLinkListener`:
 
 ```typescript
-LinkFlow.setAttributionCallback((result) => {
-  if (result.deepLinkValue) {
-    // Parse and navigate
-    const url = new URL(result.deepLinkValue);
-    if (url.pathname.includes('/product/')) {
-      const productId = url.pathname.split('/').pop();
-      navigation.navigate('Product', { id: productId });
-    }
+const sub = LinkFlow.addDeepLinkListener(({ url }) => {
+  const u = new URL(url);
+  if (u.pathname.startsWith('/product/')) {
+    const productId = u.pathname.split('/').pop();
+    navigation.navigate('Product', { id: productId });
   }
 });
+// later:
+sub.remove();
 ```
 
 ## API Reference
@@ -127,15 +138,42 @@ await LinkFlow.initialize({
 });
 ```
 
-### `LinkFlow.setAttributionCallback(callback)`
+### `LinkFlow.addAttributionListener(callback)` → `EmitterSubscription`
 
-Set callback for attribution results.
+Subscribe to attribution-resolved events. Call `.remove()` on the returned
+subscription when the listener is no longer needed.
+
+```typescript
+const sub = LinkFlow.addAttributionListener((result) => {
+  console.log(result);
+});
+// cleanup
+sub.remove();
+```
+
+### `LinkFlow.addDeepLinkListener(callback)` → `EmitterSubscription`
+
+Subscribe to deep link events received while the app is running.
+
+### `LinkFlow.addErrorListener(callback)` → `EmitterSubscription`
+
+Subscribe to non-fatal errors emitted by the native SDK.
+
+### `LinkFlow.setAttributionCallback(callback)` *(deprecated)*
+
+> **Deprecated since 1.1.0.** Use `addAttributionListener` instead. Kept for
+> backward compatibility with v1.0.x consumers; will be removed in 2.0.0.
 
 ```typescript
 LinkFlow.setAttributionCallback((result) => {
   console.log(result);
 });
 ```
+
+### `LinkFlow.getLastAttributionResult()` → `AttributionResult | null`
+
+Synchronously returns the most recent attribution result cached in JS, or
+`null` if none has been resolved yet.
 
 ### `LinkFlow.handleAppLaunch()`
 

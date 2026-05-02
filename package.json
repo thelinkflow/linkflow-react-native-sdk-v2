@@ -1,6 +1,6 @@
 {
   "name": "@linkflow/react-native-sdk",
-  "version": "1.0.8",
+  "version": "1.1.0",
   "description": "LinkFlow SDK for React Native - Mobile attribution and deep linking",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",

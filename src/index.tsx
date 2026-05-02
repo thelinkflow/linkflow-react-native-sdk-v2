@@ -1,12 +1,22 @@
-import { NativeModules, NativeEventEmitter, Platform, Linking } from 'react-native';
+/**
+ * @linkflow/react-native-sdk
+ * Mobile attribution and deferred deep linking for React Native.
+ */
+import {
+  Linking,
+  NativeEventEmitter,
+  NativeModules,
+  Platform,
+} from 'react-native';
+import type { EmitterSubscription } from 'react-native';
 
 const LINKING_ERROR =
   `The package '@linkflow/react-native-sdk' doesn't seem to be linked. Make sure: \n\n` +
   Platform.select({ ios: "- Run 'pod install'\n", default: '' }) +
   '- Rebuild the app after installing the package\n' +
-  '- You are not using Expo Go\n';
+  '- You are not using Expo Go (use a custom dev client instead)\n';
 
-const LinkFlowSDK = NativeModules.LinkFlowSDK
+const NativeLinkFlow = NativeModules.LinkFlowSDK
   ? NativeModules.LinkFlowSDK
   : new Proxy(
       {},
@@ -17,14 +27,23 @@ const LinkFlowSDK = NativeModules.LinkFlowSDK
       }
     );
 
-const eventEmitter = new NativeEventEmitter(LinkFlowSDK);
+const eventEmitter = new NativeEventEmitter(NativeLinkFlow);
 
-// Types
+// ---------- Types ----------
+
 export interface AttributionResult {
   attributed: boolean;
   deepLinkValue?: string;
   deepLinkParams?: Record<string, any>;
   campaignData?: Record<string, any>;
+}
+
+export interface DeepLinkEvent {
+  url: string;
+}
+
+export interface LinkFlowError {
+  message: string;
 }
 
 export interface LinkFlowConfig {
@@ -33,206 +52,165 @@ export interface LinkFlowConfig {
 }
 
 export type AttributionCallback = (result: AttributionResult) => void;
+export type DeepLinkCallback = (event: DeepLinkEvent) => void;
+export type ErrorCallback = (error: LinkFlowError) => void;
 
-/**
- * LinkFlow React Native SDK
- *
- * Provides mobile attribution and deep linking for React Native apps
- */
+// ---------- Constants ----------
+
+const EVENT_ATTRIBUTION = 'LinkFlowAttribution';
+const EVENT_DEEPLINK = 'LinkFlowDeepLink';
+const EVENT_ERROR = 'LinkFlowError';
+
+// ---------- SDK ----------
+
 class LinkFlow {
   private static initialized = false;
-  private static attributionCallback?: AttributionCallback;
-  private static linkingSubscription?: any;
+  private static lastResult: AttributionResult | null = null;
+  private static linkingSubscription: EmitterSubscription | null = null;
+  private static internalAttributionSub: EmitterSubscription | null = null;
+  private static legacyCallbackSub: EmitterSubscription | null = null;
 
   /**
-   * Initialize the LinkFlow SDK
-   *
-   * @param config Configuration options
-   * @returns Promise that resolves when initialized
-   *
-   * @example
-   * ```typescript
-   * await LinkFlow.initialize({
-   *   apiBaseURL: 'https://thelinkflow.app',
-   *   enableLogging: __DEV__
-   * });
-   * ```
+   * Initialize the LinkFlow SDK. Must be called once at app launch before
+   * any other method.
    */
   static async initialize(config: LinkFlowConfig = {}): Promise<void> {
     if (this.initialized) {
-      console.warn('LinkFlow SDK already initialized');
+      console.warn('[LinkFlow] SDK already initialized');
       return;
     }
+    const { apiBaseURL = 'https://thelinkflow.app', enableLogging = false } =
+      config;
 
-    const { apiBaseURL = 'https://thelinkflow.app', enableLogging = false } = config;
+    await NativeLinkFlow.initialize(apiBaseURL, enableLogging);
+    this.initialized = true;
 
-    try {
-      await LinkFlowSDK.initialize(apiBaseURL, enableLogging);
-      this.initialized = true;
+    // Cache the most recent attribution result so consumers that subscribe
+    // late can still fetch it via getLastAttributionResult().
+    this.internalAttributionSub = eventEmitter.addListener(
+      EVENT_ATTRIBUTION,
+      (result: AttributionResult) => {
+        this.lastResult = result;
+      }
+    );
 
-      // Set up deep link listener
-      this.setupDeepLinkListener();
-
-      console.log('LinkFlow SDK initialized successfully');
-    } catch (error) {
-      console.error('Failed to initialize LinkFlow SDK:', error);
-      throw error;
-    }
+    this.setupDeepLinkListener();
   }
 
   /**
-   * Set attribution callback
-   *
-   * @param callback Function to call when attribution is resolved
-   *
-   * @example
-   * ```typescript
-   * LinkFlow.setAttributionCallback((result) => {
-   *   if (result.attributed) {
-   *     console.log('Deep Link:', result.deepLinkValue);
-   *     console.log('Campaign:', result.campaignData);
-   *
-   *     // Navigate based on deep link
-   *     if (result.deepLinkValue?.includes('product')) {
-   *       navigation.navigate('Product');
-   *     }
-   *   }
-   * });
-   * ```
+   * Subscribe to attribution-resolved events. Returns a subscription you
+   * MUST call `.remove()` on when the listener is no longer needed (typically
+   * in a useEffect cleanup).
+   */
+  static addAttributionListener(
+    callback: AttributionCallback
+  ): EmitterSubscription {
+    return eventEmitter.addListener(EVENT_ATTRIBUTION, callback);
+  }
+
+  /** Subscribe to deep link events received while the app is running. */
+  static addDeepLinkListener(
+    callback: DeepLinkCallback
+  ): EmitterSubscription {
+    return eventEmitter.addListener(EVENT_DEEPLINK, callback);
+  }
+
+  /** Subscribe to non-fatal errors emitted by the native SDK. */
+  static addErrorListener(callback: ErrorCallback): EmitterSubscription {
+    return eventEmitter.addListener(EVENT_ERROR, callback);
+  }
+
+  /**
+   * @deprecated Use `addAttributionListener` instead. Single-callback
+   * accessor kept for backward compatibility with v1.0.x consumers.
    */
   static setAttributionCallback(callback: AttributionCallback): void {
-    this.attributionCallback = callback;
-
-    // Set up event listener for native callbacks
-    eventEmitter.addListener('LinkFlowAttribution', (result: AttributionResult) => {
-      if (this.attributionCallback) {
-        this.attributionCallback(result);
-      }
-    });
+    this.legacyCallbackSub?.remove();
+    this.legacyCallbackSub = eventEmitter.addListener(
+      EVENT_ATTRIBUTION,
+      callback
+    );
   }
 
   /**
-   * Handle app launch and resolve attribution
-   *
-   * Call this in your App component or after app mounts
-   *
-   * @example
-   * ```typescript
-   * useEffect(() => {
-   *   LinkFlow.handleAppLaunch();
-   * }, []);
-   * ```
+   * Handle app launch. Call this once after `initialize()` (typically in a
+   * top-level useEffect). It triggers attribution resolution on first launch
+   * and replays the cached result on subsequent launches.
    */
   static async handleAppLaunch(): Promise<void> {
-    if (!this.initialized) {
-      throw new Error('LinkFlow SDK not initialized. Call initialize() first.');
-    }
+    this.assertInitialized();
+    const initialUrl = await Linking.getInitialURL();
+    await NativeLinkFlow.handleAppLaunch(initialUrl);
+  }
 
-    try {
-      // Get initial URL (for cold start)
-      const initialUrl = await Linking.getInitialURL();
-
-      await LinkFlowSDK.handleAppLaunch(initialUrl);
-    } catch (error) {
-      console.error('Error handling app launch:', error);
-      throw error;
-    }
+  /** Manually feed a deep link into the SDK (rarely needed). */
+  static async handleDeepLink(url: string): Promise<void> {
+    this.assertInitialized();
+    await NativeLinkFlow.handleDeepLink(url);
   }
 
   /**
-   * Track in-app event
+   * Track an in-app event.
    *
-   * @param eventName Event name (e.g., 'purchase', 'add_to_cart')
-   * @param params Event parameters (optional)
-   * @param revenue Revenue amount (optional)
-   *
-   * @example
-   * ```typescript
-   * // Track purchase
-   * await LinkFlow.trackEvent('purchase', {
-   *   order_id: '12345',
-   *   currency: 'USD'
-   * }, 99.99);
-   *
-   * // Track product view
-   * await LinkFlow.trackEvent('product_view', {
-   *   product_id: 'abc123'
-   * });
-   * ```
+   * @param eventName e.g. `'purchase'`, `'add_to_cart'`
+   * @param params custom event properties
+   * @param revenue optional revenue amount in the project's currency
    */
   static async trackEvent(
     eventName: string,
     params?: Record<string, any>,
     revenue?: number
   ): Promise<void> {
-    if (!this.initialized) {
-      throw new Error('LinkFlow SDK not initialized. Call initialize() first.');
-    }
-
-    try {
-      await LinkFlowSDK.trackEvent(eventName, params || {}, revenue);
-    } catch (error) {
-      console.error('Error tracking event:', error);
-      throw error;
-    }
+    this.assertInitialized();
+    await NativeLinkFlow.trackEvent(eventName, params || {}, revenue ?? null);
   }
 
   /**
-   * Get attribution result (if available)
-   *
-   * @returns Promise with attribution result or null
-   *
-   * @example
-   * ```typescript
-   * const result = await LinkFlow.getAttributionResult();
-   * if (result) {
-   *   console.log('Attribution:', result);
-   * }
-   * ```
+   * Returns the most recent attribution result, or `null` if none has been
+   * resolved yet. Reads from native cache + JS in-memory cache.
    */
   static async getAttributionResult(): Promise<AttributionResult | null> {
-    if (!this.initialized) {
-      throw new Error('LinkFlow SDK not initialized. Call initialize() first.');
-    }
-
-    try {
-      return await LinkFlowSDK.getAttributionResult();
-    } catch (error) {
-      console.error('Error getting attribution result:', error);
-      return null;
-    }
+    this.assertInitialized();
+    const native = await NativeLinkFlow.getAttributionResult();
+    return native ?? this.lastResult;
   }
 
-  /**
-   * Set up deep link listener for app running state
-   */
-  private static setupDeepLinkListener(): void {
-    if (this.linkingSubscription) {
-      return;
-    }
+  /** Returns the cached result synchronously without making a native call. */
+  static getLastAttributionResult(): AttributionResult | null {
+    return this.lastResult;
+  }
 
+  /** Tear down all internal listeners. */
+  static destroy(): void {
+    this.linkingSubscription?.remove();
+    this.linkingSubscription = null;
+    this.internalAttributionSub?.remove();
+    this.internalAttributionSub = null;
+    this.legacyCallbackSub?.remove();
+    this.legacyCallbackSub = null;
+    this.initialized = false;
+    this.lastResult = null;
+  }
+
+  private static setupDeepLinkListener(): void {
+    if (this.linkingSubscription) return;
     this.linkingSubscription = Linking.addEventListener('url', ({ url }) => {
       if (url) {
-        LinkFlowSDK.handleDeepLink(url);
+        NativeLinkFlow.handleDeepLink(url).catch((err: unknown) =>
+          console.error('[LinkFlow] handleDeepLink failed:', err)
+        );
       }
     });
   }
 
-  /**
-   * Clean up resources
-   */
-  static destroy(): void {
-    if (this.linkingSubscription) {
-      this.linkingSubscription.remove();
-      this.linkingSubscription = null;
+  private static assertInitialized(): void {
+    if (!this.initialized) {
+      throw new Error(
+        '[LinkFlow] SDK not initialized. Call LinkFlow.initialize() first.'
+      );
     }
-
-    eventEmitter.removeAllListeners('LinkFlowAttribution');
-    this.initialized = false;
   }
 }
 
 export default LinkFlow;
-
-// Export types
 export { LinkFlow };

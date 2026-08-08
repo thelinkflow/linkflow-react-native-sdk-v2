@@ -1,0 +1,76 @@
+{
+  "$comment": [
+    "Pins the upstream native SDK sources that this package vendors.",
+    "",
+    "The React Native package ships copies of the Android and iOS SDK sources so",
+    "that integrators do not have to add Maven/CocoaPods dependencies themselves.",
+    "Those copies are byte-identical to the standalone repositories, which means",
+    "any fix made upstream is silently absent here until someone remembers to",
+    "copy it across. `npm run sync:native:check` turns that silence into a CI",
+    "failure; `npm run sync:native` performs the copy.",
+    "",
+    "`commit` is the exact upstream revision the vendored files correspond to.",
+    "Bump it with `npm run sync:native -- --ref <branch|tag|sha>`.",
+    "",
+    "NOTE: these pins currently reference a feature branch rather than main,",
+    "because the 2.0.0 hardening work these files contain has not landed on the",
+    "upstream default branches yet. Repoint `ref` to a release tag once it does."
+  ],
+  "sources": [
+    {
+      "name": "android",
+      "repo": "https://github.com/thelinkflow/linkflow-android-sdk-v2.git",
+      "ref": "claude/improvements-features-brainstorm-k5z6hn",
+      "commit": "2e0b0ef9d0f538f9666e72093eb6e146669d4f27",
+      "files": [
+        {
+          "from": "src/main/kotlin/com/linkflow/sdk/LinkFlowSDK.kt",
+          "to": "android/src/main/kotlin/com/linkflow/sdk/LinkFlowSDK.kt"
+        },
+        {
+          "from": "src/main/kotlin/com/linkflow/sdk/LinkFlowConfig.kt",
+          "to": "android/src/main/kotlin/com/linkflow/sdk/LinkFlowConfig.kt"
+        },
+        {
+          "from": "src/main/kotlin/com/linkflow/sdk/LinkFlowHttp.kt",
+          "to": "android/src/main/kotlin/com/linkflow/sdk/LinkFlowHttp.kt"
+        },
+        {
+          "from": "src/main/kotlin/com/linkflow/sdk/EventQueue.kt",
+          "to": "android/src/main/kotlin/com/linkflow/sdk/EventQueue.kt"
+        }
+      ]
+    },
+    {
+      "name": "ios",
+      "repo": "https://github.com/thelinkflow/linkflow-ios-sdk-v2.git",
+      "ref": "claude/improvements-features-brainstorm-k5z6hn",
+      "commit": "b922a9c2e902ebf3f3338c131149d126952c26af",
+      "files": [
+        {
+          "from": "Sources/LinkFlowSDK/LinkFlowSDK.swift",
+          "to": "ios/LinkFlowSDK.swift"
+        },
+        {
+          "from": "Sources/LinkFlowSDK/LinkFlowCore.swift",
+          "to": "ios/LinkFlowCore.swift"
+        },
+        {
+          "from": "Sources/LinkFlowSDK/LinkFlowStore.swift",
+          "to": "ios/LinkFlowStore.swift"
+        }
+      ]
+    }
+  ],
+  "$localOnly": [
+    "These files are part of the bridge and have no upstream counterpart.",
+    "They are listed so the checker can distinguish 'local by design' from",
+    "'someone added a vendored file and forgot to register it'."
+  ],
+  "localOnly": [
+    "android/src/main/kotlin/com/linkflow/sdk/rn/LinkFlowSDKModule.kt",
+    "android/src/main/kotlin/com/linkflow/sdk/rn/LinkFlowSDKPackage.kt",
+    "ios/LinkFlowSDKModule.swift",
+    "ios/LinkFlowSDKModule.m"
+  ]
+}

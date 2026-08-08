@@ -221,6 +221,42 @@ const handleAttribution = (result: AttributionResult) => {
 - iOS 13.0+
 - Android API 21+
 
+## Maintaining the vendored native sources
+
+This package ships copies of the native SDK sources rather than depending on
+them through Maven and CocoaPods, so that integrators get zero-config
+installation. The trade-off is that those copies can fall behind the
+repositories they came from:
+
+| Vendored here | Upstream |
+|---|---|
+| `android/src/main/kotlin/com/linkflow/sdk/*.kt` | [linkflow-android-sdk-v2](https://github.com/thelinkflow/linkflow-android-sdk-v2) |
+| `ios/LinkFlowSDK.swift`, `LinkFlowCore.swift`, `LinkFlowStore.swift` | [linkflow-ios-sdk-v2](https://github.com/thelinkflow/linkflow-ios-sdk-v2) |
+
+Files under `android/.../sdk/rn/` plus `ios/LinkFlowSDKModule.{swift,m}` are the
+React Native bridge and have no upstream counterpart.
+
+`native-sources.json` pins the exact upstream commit each copy corresponds to,
+and CI fails if the working copies do not match it. That is the point: without
+the gate, a fix made upstream reaches React Native users only if somebody
+remembers to copy it, and nothing anywhere reports that they did not.
+
+```bash
+# Verify the vendored copies match their pinned upstream commits (runs in CI)
+npm run sync:native:check
+
+# Pull the pinned upstream versions in
+npm run sync:native
+
+# Move the pins to a new upstream revision, then pull it in
+npm run sync:native -- --ref v2.1.0
+```
+
+Adding a new native file? Register it in `native-sources.json` — under `files`
+if it mirrors upstream, or `localOnly` if it is bridge code. The checker fails
+on any unregistered `.kt`, `.swift` or `.m` file so a new copy cannot slip
+outside the gate.
+
 ## License
 
 MIT License

@@ -24,11 +24,14 @@
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",
-    "!**/.*"
+    "!**/.*",
+    "native-sources.json"
   ],
   "scripts": {
     "test": "jest",
     "typecheck": "tsc --noEmit",
+    "sync:native": "node scripts/sync-native.mjs update",
+    "sync:native:check": "node scripts/sync-native.mjs check",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "prepack": "bob build",
     "release": "release-it",

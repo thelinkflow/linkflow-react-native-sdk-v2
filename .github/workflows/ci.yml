@@ -24,8 +24,27 @@ jobs:
       - run: npm install
       - run: npm run typecheck
 
+  # This package vendors byte-identical copies of the standalone Android and iOS
+  # SDK sources. Without this gate a fix landing upstream never reaches React
+  # Native users, and nothing fails to say so — the copies just quietly go stale.
+  native-drift:
+    name: Vendored native sources match upstream
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      # No `npm install`: the checker deliberately uses only git and Node's
+      # standard library, so drift is still detectable if the dependency tree
+      # is broken.
+      - name: Check vendored native sources
+        run: npm run sync:native:check
+
   publish:
-    needs: build
+    needs: [build, native-drift]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
